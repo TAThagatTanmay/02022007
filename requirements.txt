@@ -24,7 +24,6 @@ opencv-contrib-python==4.8.0.76
 imutils==0.5.4
 
 # Database and data handling
-sqlite3  # Built-in with Python
 pandas==2.0.3
 python-dateutil==2.8.2
 
