@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Attendance Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+        }
+        
+        .header { 
+            background: white; 
+            border-radius: 20px; 
+            padding: 30px; 
+            margin-bottom: 20px; 
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .header h1 { 
+            font-size: 2.5em; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .header p { color: #666; font-size: 1.1em; }
+        
+        .nav-tabs { 
+            display: flex; 
+            gap: 10px; 
+            margin-bottom: 20px; 
+            justify-content: center;
+        }
+        .nav-tab { 
+            padding: 12px 24px; 
+            background: rgba(255,255,255,0.2); 
+            color: white; 
+            border: none; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        .nav-tab:hover, .nav-tab.active { 
+            background: white; 
+            color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .dashboard-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 20px; 
+            margin-bottom: 20px;
+        }
+        
+        .card { 
+            background: white; 
+            border-radius: 15px; 
+            padding: 25px; 
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        .card:hover { 
+            transform: translateY(-5px); 
+        }
+        
+        .card h3 { 
+            margin-bottom: 15px; 
+            color: #333; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px;
+        }
+        
+        .stat-card { 
+            text-align: center; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white;
+        }
+        .stat-number { 
+            font-size: 3em; 
+            font-weight: bold; 
+            margin-bottom: 10px;
+        }
+        .stat-label { 
+            font-size: 1.1em; 
+            opacity: 0.9; 
+        }
+        
+        .chart-container { 
+            height: 300px; 
+            position: relative;
+        }
+        
+        .student-search { 
+            width: 100%; 
+            padding: 15px; 
+            border: 2px solid #e9ecef; 
+            border-radius: 10px; 
+            font-size: 16px; 
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        .student-search:focus { 
+            outline: none; 
+            border-color: #667eea; 
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .student-card { 
+            background: #f8f9fa; 
+            border-radius: 12px; 
+            padding: 20px; 
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+            transition: all 0.3s;
+        }
+        .student-card:hover { 
+            background: #e9ecef; 
+            transform: translateX(5px);
+        }
+        
+        .student-name { 
+            font-size: 1.2em; 
+            font-weight: bold; 
+            margin-bottom: 5px;
+        }
+        .student-details { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 10px; 
+            margin: 10px 0;
+        }
+        .detail-item { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        
+        .progress-bar { 
+            width: 100%; 
+            height: 8px; 
+            background: #e9ecef; 
+            border-radius: 4px; 
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill { 
+            height: 100%; 
+            background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); 
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+        
+        .attendance-badge { 
+            padding: 4px 12px; 
+            border-radius: 20px; 
+            font-size: 0.9em; 
+            font-weight: bold;
+        }
+        .badge-excellent { background: #d4edda; color: #155724; }
+        .badge-good { background: #fff3cd; color: #856404; }
+        .badge-poor { background: #f8d7da; color: #721c24; }
+        
+        .method-tag { 
+            padding: 2px 8px; 
+            border-radius: 4px; 
+            font-size: 0.8em; 
+            margin: 2px;
+        }
+        .tag-rfid { background: #e3f2fd; color: #1976d2; }
+        .tag-face { background: #f3e5f5; color: #7b1fa2; }
+        .tag-zoom { background: #e8f5e8; color: #388e3c; }
+        
+        .recent-activity { 
+            max-height: 400px; 
+            overflow-y: auto;
+        }
+        
+        .activity-item { 
+            padding: 12px 0; 
+            border-bottom: 1px solid #f1f3f4; 
+            display: flex; 
+            align-items: center; 
+            gap: 15px;
+        }
+        .activity-item:last-child { border-bottom: none; }
+        
+        .activity-icon { 
+            width: 40px; 
+            height: 40px; 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 1.2em;
+        }
+        .icon-rfid { background: linear-gradient(135deg, #2196f3 0%, #21cbf3 100%); color: white; }
+        .icon-face { background: linear-gradient(135deg, #9c27b0 0%, #e91e63 100%); color: white; }
+        .icon-zoom { background: linear-gradient(135deg, #4caf50 0%, #8bc34a 100%); color: white; }
+        
+        .activity-details { flex: 1; }
+        .activity-name { font-weight: bold; margin-bottom: 2px; }
+        .activity-time { color: #666; font-size: 0.9em; }
+        
+        .filter-buttons { 
+            display: flex; 
+            gap: 10px; 
+            margin-bottom: 20px; 
+            flex-wrap: wrap;
+        }
+        .filter-btn { 
+            padding: 8px 16px; 
+            border: 2px solid #667eea; 
+            background: transparent; 
+            color: #667eea; 
+            border-radius: 8px; 
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .filter-btn.active, .filter-btn:hover { 
+            background: #667eea; 
+            color: white; 
+        }
+        
+        .real-time-indicator { 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            background: #00b894; 
+            color: white; 
+            padding: 10px 20px; 
+            border-radius: 25px; 
+            display: flex; 
+            align-items: center; 
+            gap: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .pulse-dot { 
+            width: 8px; 
+            height: 8px; 
+            background: white; 
+            border-radius: 50%; 
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+        
+        .hidden { display: none !important; }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .student-details { grid-template-columns: 1fr; }
+            .nav-tabs { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Dynamic Attendance Dashboard</h1>
+            <p>Real-time monitoring with RFID, Face Recognition & Zoom Integration</p>
+            <div id="lastUpdated" style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                Last updated: <span id="updateTime">--:--:--</span>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showTab('overview')">📈 Overview</button>
+            <button class="nav-tab" onclick="showTab('students')">👥 Students</button>
+            <button class="nav-tab" onclick="showTab('analytics')">📊 Analytics</button>
+            <button class="nav-tab" onclick="showTab('live')">🔴 Live Feed</button>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="overviewTab" class="tab-content">
+            <div class="dashboard-grid">
+                <div class="card stat-card">
+                    <div class="stat-number" id="totalStudents">0</div>
+                    <div class="stat-label">Total Students</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-number" id="todayAttendance">0%</div>
+                    <div class="stat-label">Today's Attendance</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-number" id="activeClasses">0</div>
+                    <div class="stat-label">Active Classes</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-number" id="avgAttendance">0%</div>
+                    <div class="stat-label">Weekly Average</div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="card">
+                    <h3>📋 Recent Activity</h3>
+                    <div class="recent-activity" id="recentActivity">
+                        <!-- Activity items will be populated here -->
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>📊 Attendance Methods</h3>
+                    <div class="chart-container" id="methodsChart">
+                        <!-- Chart will be rendered here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Students Tab -->
+        <div id="studentsTab" class="tab-content hidden">
+            <div class="card">
+                <input type="text" class="student-search" id="studentSearch" 
+                       placeholder="🔍 Search students by name, ID, or section...">
+                
+                <div class="filter-buttons">
+                    <button class="filter-btn active" onclick="filterStudents('all')">All Students</button>
+                    <button class="filter-btn" onclick="filterStudents('excellent')">Excellent (90%+)</button>
+                    <button class="filter-btn" onclick="filterStudents('good')">Good (75-89%)</button>
+                    <button class="filter-btn" onclick="filterStudents('poor')">Needs Attention (<75%)</button>
+                </div>
+                
+                <div id="studentsContainer">
+                    <!-- Student cards will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Tab -->
+        <div id="analyticsTab" class="tab-content hidden">
+            <div class="dashboard-grid">
+                <div class="card">
+                    <h3>📈 Attendance Trends</h3>
+                    <div class="chart-container" id="trendsChart">
+                        <!-- Trends chart -->
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>🎯 Section Comparison</h3>
+                    <div class="chart-container" id="sectionsChart">
+                        <!-- Sections chart -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>📊 Detailed Statistics</h3>
+                <div id="detailedStats">
+                    <!-- Detailed statistics -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Feed Tab -->
+        <div id="liveTab" class="tab-content hidden">
+            <div class="dashboard-grid">
+                <div class="card">
+                    <h3>🔴 Live RFID Scans</h3>
+                    <div id="liveRfidScans">
+                        <!-- Live RFID activity -->
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>👤 Face Recognition Status</h3>
+                    <div id="liveFaceRecognition">
+                        <!-- Live face recognition status -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>💻 Zoom Sessions</h3>
+                <div id="liveZoomSessions">
+                    <!-- Live Zoom sessions -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Real-time Indicator -->
+    <div class="real-time-indicator">
+        <div class="pulse-dot"></div>
+        <span>Live Dashboard</span>
+    </div>
+
+    <script>
+        class DynamicDashboard {
+            constructor() {
+                this.API_BASE_URL = window.location.origin;
+                this.updateInterval = null;
+                this.students = [];
+                this.currentFilter = 'all';
+                this.activeTab = 'overview';
+                
+                this.init();
+            }
+
+            async init() {
+                this.bindEvents();
+                await this.loadInitialData();
+                this.startRealTimeUpdates();
+                this.updateTimestamp();
+            }
+
+            bindEvents() {
+                document.getElementById('studentSearch').addEventListener('input', (e) => {
+                    this.searchStudents(e.target.value);
+                });
+            }
+
+            async apiCall(endpoint, method = 'GET', data = null) {
+                const config = { method, headers: { 'Content-Type': 'application/json' } };
+                if (data) config.body = JSON.stringify(data);
+
+                try {
+                    const response = await fetch(`${this.API_BASE_URL}${endpoint}`, config);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return await response.json();
+                } catch (error) {
+                    console.error('API call failed:', error);
+                    return this.getMockData(endpoint);
+                }
+            }
+
+            getMockData(endpoint) {
+                // Fallback mock data for development/demo
+                if (endpoint.includes('dashboard-data')) {
+                    return {
+                        total_students: 156,
+                        today_attendance: 89,
+                        active_classes: 12,
+                        total_sections: 20,
+                        recent_attendance: [
+                            { student_name: 'Nitin Singh', id_number: '2500032073', method: 'RFID', timestamp: '09:15:23', status: 'Present' },
+                            { student_name: 'Abhijeet Arjeet', id_number: '2500031388', method: 'FACE', timestamp: '09:16:45', status: 'Present' },
+                            { student_name: 'Ayan Roy', id_number: '2500031529', method: 'ZOOM', timestamp: '14:22:10', status: 'Present' }
+                        ]
+                    };
+                }
+                return {};
+            }
+
+            async loadInitialData() {
+                try {
+                    // Load dashboard data
+                    const dashboardData = await this.apiCall('/analytics/dashboard-data');
+                    this.updateOverviewStats(dashboardData);
+                    this.updateRecentActivity(dashboardData.recent_attendance || []);
+                    
+                    // Load students data
+                    await this.loadStudentsData();
+                    
+                } catch (error) {
+                    console.error('Failed to load initial data:', error);
+                    // Use mock data as fallback
+                    this.loadMockData();
+                }
+            }
+
+            async loadStudentsData() {
+                try {
+                    // Load student analytics
+                    const mockStudents = [
+                        {
+                            name: 'Nitin Singh',
+                            id_number: '2500032073',
+                            section: 'S33',
+                            attendance_percentage: 94,
+                            total_classes: 45,
+                            attended_classes: 42,
+                            rfid_scans: 35,
+                            face_recognitions: 5,
+                            zoom_sessions: 2,
+                            last_attendance: new Date(Date.now() - 2*60*60*1000)
+                        },
+                        {
+                            name: 'Abhijeet Arjeet',
+                            id_number: '2500031388',
+                            section: 'S33',
+                            attendance_percentage: 87,
+                            total_classes: 45,
+                            attended_classes: 39,
+                            rfid_scans: 30,
+                            face_recognitions: 7,
+                            zoom_sessions: 2,
+                            last_attendance: new Date(Date.now() - 5*60*60*1000)
+                        },
+                        {
+                            name: 'Ayan Roy',
+                            id_number: '2500031529',
+                            section: 'S33',
+                            attendance_percentage: 78,
+                            total_classes: 45,
+                            attended_classes: 35,
+                            rfid_scans: 25,
+                            face_recognitions: 3,
+                            zoom_sessions: 7,
+                            last_attendance: new Date(Date.now() - 24*60*60*1000)
+                        }
+                    ];
+                    
+                    this.students = mockStudents;
+                    this.renderStudents();
+                    
+                } catch (error) {
+                    console.error('Failed to load students data:', error);
+                }
+            }
+
+            loadMockData() {
+                const mockData = {
+                    total_students: 156,
+                    today_attendance: 89,
+                    active_classes: 12,
+                    avg_attendance: 85,
+                    recent_attendance: [
+                        { student_name: 'Nitin Singh', id_number: '2500032073', method: 'RFID', timestamp: '09:15:23', status: 'Present' },
+                        { student_name: 'Abhijeet Arjeet', id_number: '2500031388', method: 'FACE', timestamp: '09:16:45', status: 'Present' },
+                        { student_name: 'Ayan Roy', id_number: '2500031529', method: 'ZOOM', timestamp: '14:22:10', status: 'Present' }
+                    ]
+                };
+                
+                this.updateOverviewStats(mockData);
+                this.updateRecentActivity(mockData.recent_attendance);
+            }
+
+            updateOverviewStats(data) {
+                document.getElementById('totalStudents').textContent = data.total_students || 0;
+                document.getElementById('todayAttendance').textContent = `${data.today_attendance || 0}%`;
+                document.getElementById('activeClasses').textContent = data.active_classes || 0;
+                document.getElementById('avgAttendance').textContent = `${data.avg_attendance || 85}%`;
+            }
+
+            updateRecentActivity(activities) {
+                const container = document.getElementById('recentActivity');
+                container.innerHTML = '';
+                
+                activities.forEach(activity => {
+                    const item = document.createElement('div');
+                    item.className = 'activity-item';
+                    
+                    const iconClass = activity.method.toLowerCase() === 'rfid' ? 'icon-rfid' : 
+                                     activity.method.toLowerCase() === 'face' ? 'icon-face' : 'icon-zoom';
+                    const iconSymbol = activity.method.toLowerCase() === 'rfid' ? '📱' : 
+                                      activity.method.toLowerCase() === 'face' ? '👤' : '💻';
+                    
+                    item.innerHTML = `
+                        <div class="activity-icon ${iconClass}">
+                            ${iconSymbol}
+                        </div>
+                        <div class="activity-details">
+                            <div class="activity-name">${activity.student_name}</div>
+                            <div class="activity-time">
+                                ${activity.method} scan at ${activity.timestamp} - ${activity.status}
+                            </div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(item);
+                });
+            }
+
+            renderStudents() {
+                const container = document.getElementById('studentsContainer');
+                container.innerHTML = '';
+                
+                let filteredStudents = this.students;
+                
+                // Apply filter
+                if (this.currentFilter !== 'all') {
+                    filteredStudents = this.students.filter(student => {
+                        if (this.currentFilter === 'excellent') return student.attendance_percentage >= 90;
+                        if (this.currentFilter === 'good') return student.attendance_percentage >= 75 && student.attendance_percentage < 90;
+                        if (this.currentFilter === 'poor') return student.attendance_percentage < 75;
+                        return true;
+                    });
+                }
+                
+                filteredStudents.forEach(student => {
+                    const card = document.createElement('div');
+                    card.className = 'student-card';
+                    
+                    const badgeClass = student.attendance_percentage >= 90 ? 'badge-excellent' : 
+                                     student.attendance_percentage >= 75 ? 'badge-good' : 'badge-poor';
+                    
+                    const badgeText = student.attendance_percentage >= 90 ? 'Excellent' : 
+                                     student.attendance_percentage >= 75 ? 'Good' : 'Needs Attention';
+                    
+                    const lastAttendanceStr = student.last_attendance ? 
+                        this.timeAgo(student.last_attendance) : 'Never';
+                    
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 15px;">
+                            <div>
+                                <div class="student-name">${student.name}</div>
+                                <div style="color: #666;">ID: ${student.id_number} | Section: ${student.section}</div>
+                            </div>
+                            <div class="attendance-badge ${badgeClass}">
+                                ${badgeText}
+                            </div>
+                        </div>
+                        
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${student.attendance_percentage}%"></div>
+                        </div>
+                        
+                        <div class="student-details">
+                            <div class="detail-item">
+                                <span>Attendance:</span>
+                                <span><strong>${student.attendance_percentage}%</strong> (${student.attended_classes}/${student.total_classes})</span>
+                            </div>
+                            <div class="detail-item">
+                                <span>Last Attendance:</span>
+                                <span>${lastAttendanceStr}</span>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 10px;">
+                            <span class="method-tag tag-rfid">RFID: ${student.rfid_scans}</span>
+                            <span class="method-tag tag-face">Face: ${student.face_recognitions}</span>
+                            <span class="method-tag tag-zoom">Zoom: ${student.zoom_sessions}</span>
+                        </div>
+                    `;
+                    
+                    container.appendChild(card);
+                });
+                
+                if (filteredStudents.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">No students found</div>';
+                }
+            }
+
+            searchStudents(query) {
+                if (!query) {
+                    this.renderStudents();
+                    return;
+                }
+                
+                const container = document.getElementById('studentsContainer');
+                const filteredStudents = this.students.filter(student => 
+                    student.name.toLowerCase().includes(query.toLowerCase()) ||
+                    student.id_number.includes(query) ||
+                    student.section.toLowerCase().includes(query.toLowerCase())
+                );
+                
+                container.innerHTML = '';
+                filteredStudents.forEach(student => {
+                    // Render student card (same logic as renderStudents)
+                    const card = document.createElement('div');
+                    card.className = 'student-card';
+                    
+                    const badgeClass = student.attendance_percentage >= 90 ? 'badge-excellent' : 
+                                     student.attendance_percentage >= 75 ? 'badge-good' : 'badge-poor';
+                    
+                    const badgeText = student.attendance_percentage >= 90 ? 'Excellent' : 
+                                     student.attendance_percentage >= 75 ? 'Good' : 'Needs Attention';
+                    
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 15px;">
+                            <div>
+                                <div class="student-name">${student.name}</div>
+                                <div style="color: #666;">ID: ${student.id_number} | Section: ${student.section}</div>
+                            </div>
+                            <div class="attendance-badge ${badgeClass}">
+                                ${badgeText}
+                            </div>
+                        </div>
+                        
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${student.attendance_percentage}%"></div>
+                        </div>
+                        
+                        <div class="student-details">
+                            <div class="detail-item">
+                                <span>Attendance:</span>
+                                <span><strong>${student.attendance_percentage}%</strong> (${student.attended_classes}/${student.total_classes})</span>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 10px;">
+                            <span class="method-tag tag-rfid">RFID: ${student.rfid_scans}</span>
+                            <span class="method-tag tag-face">Face: ${student.face_recognitions}</span>
+                            <span class="method-tag tag-zoom">Zoom: ${student.zoom_sessions}</span>
+                        </div>
+                    `;
+                    
+                    container.appendChild(card);
+                });
+            }
+
+            startRealTimeUpdates() {
+                // Update every 30 seconds
+                this.updateInterval = setInterval(() => {
+                    this.loadInitialData();
+                    this.updateTimestamp();
+                }, 30000);
+            }
+
+            updateTimestamp() {
+                const now = new Date();
+                document.getElementById('updateTime').textContent = now.toLocaleTimeString();
+            }
+
+            timeAgo(date) {
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+                
+                if (diffMins < 60) return `${diffMins}m ago`;
+                if (diffHours < 24) return `${diffHours}h ago`;
+                return `${diffDays}d ago`;
+            }
+
+            destroy() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                }
+            }
+        }
+
+        // Tab management
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            
+            // Remove active class from all nav tabs
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + 'Tab').classList.remove('hidden');
+            
+            // Add active class to clicked nav tab
+            event.target.classList.add('active');
+        }
+
+        // Filter management
+        function filterStudents(filter) {
+            // Remove active class from all filter buttons
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+            
+            // Update current filter and re-render
+            window.dashboard.currentFilter = filter;
+            window.dashboard.renderStudents();
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            window.dashboard = new DynamicDashboard();
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (window.dashboard) {
+                window.dashboard.destroy();
+            }
+        });
+    </script>
+</body>
+</html>

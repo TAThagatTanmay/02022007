@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC Attendance Scanner - Integrated System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f6fa; }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 15px; margin-bottom: 30px; text-align: center; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header-subtitle { font-size: 1.1em; opacity: 0.9; }
+        
+        .nfc-status { margin-top: 20px; padding: 15px; border-radius: 10px; text-align: center; }
+        .nfc-status.loading { background: #ffeaa7; }
+        .nfc-status.success { background: #00b894; }
+        .nfc-status.error { background: #e17055; }
+        
+        .status-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 10px; }
+        .status-dot.loading { background: #fdcb6e; animation: pulse 1.5s infinite; }
+        .status-dot.success { background: #00cec9; }
+        .status-dot.error { background: #d63031; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .card { background: white; border-radius: 15px; padding: 25px; margin: 20px 0; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .card h3 { margin-bottom: 15px; color: #333; }
+        
+        .mode-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
+        .mode-btn { display: flex; align-items: center; padding: 20px; border: none; border-radius: 12px; cursor: pointer; font-size: 16px; transition: all 0.3s; }
+        .mode-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
+        .mode-btn--primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .mode-btn--secondary { background: #f8f9fa; color: #333; border: 2px solid #e9ecef; }
+        
+        .btn-icon { font-size: 2em; margin-right: 15px; }
+        .mode-title { font-weight: bold; margin-bottom: 5px; }
+        .mode-description { font-size: 0.9em; opacity: 0.8; }
+        
+        .form-control { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; margin: 10px 0; }
+        .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; transition: all 0.3s; margin: 5px; }
+        .btn--primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn--secondary { background: #6c757d; color: white; }
+        .btn--outline { background: transparent; border: 2px solid #667eea; color: #667eea; }
+        .btn:hover { transform: translateY(-2px); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        
+        .scan-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; text-align: center; }
+        .stat-number { font-size: 2em; font-weight: bold; display: block; }
+        .stat-label { font-size: 0.9em; opacity: 0.8; }
+        
+        .scan-item { display: flex; align-items: center; padding: 15px; margin: 10px 0; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #667eea; }
+        .scan-item.success { border-left-color: #00b894; }
+        .scan-item.failed { border-left-color: #e17055; }
+        .scan-icon { font-size: 1.5em; margin-right: 15px; }
+        .scan-details { flex: 1; }
+        .scan-student { font-weight: bold; margin-bottom: 5px; }
+        .scan-rfid, .scan-time, .scan-message { font-size: 0.9em; color: #666; }
+        
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-content { background: white; padding: 30px; border-radius: 15px; max-width: 500px; width: 90%; }
+        .modal-header { display: flex; justify-content: between; align-items: center; margin-bottom: 20px; }
+        .modal-header h3 { flex: 1; }
+        
+        .hidden { display: none !important; }
+        .scanning { background: linear-gradient(45deg, #667eea, #764ba2) !important; animation: scanning-pulse 2s infinite; }
+        
+        @keyframes scanning-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .error-panel { background: #ffe6e6; border: 1px solid #ff9999; border-radius: 10px; padding: 20px; margin: 20px 0; }
+        .error-panel h3 { color: #d63031; margin-bottom: 10px; }
+        
+        .workflow-info { background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); color: white; }
+        .workflow-info ol { margin: 15px 0; padding-left: 20px; }
+        .workflow-benefits { margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>📱 NFC Attendance Scanner</h1>
+            <p class="header-subtitle">Integrated with Enhanced Attendance System</p>
+            <div class="nfc-status" id="nfcStatus">
+                <span class="status-dot" id="statusDot"></span>
+                <span class="status-text" id="statusText">Checking NFC...</span>
+            </div>
+        </header>
+
+        <!-- NFC Error Display -->
+        <div class="error-panel hidden" id="errorPanel">
+            <h3>NFC Not Available</h3>
+            <p id="errorMessage">Checking NFC compatibility...</p>
+            <div id="errorInstructions"></div>
+            <button class="btn btn--secondary" id="retryBtn">Retry NFC Check</button>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content hidden" id="mainContent">
+            
+            <!-- Mode Selector -->
+            <div class="mode-selector" id="modeSelector">
+                <div class="card">
+                    <h2>Select Mode</h2>
+                    <div class="mode-buttons">
+                        <button class="mode-btn mode-btn--primary" id="scanModeBtn">
+                            <span class="btn-icon">📱</span>
+                            <div>
+                                <div class="mode-title">Bulk Attendance</div>
+                                <div class="mode-description">Collect NFC scans and submit to database</div>
+                            </div>
+                        </button>
+                        <button class="mode-btn mode-btn--secondary" id="addStudentModeBtn">
+                            <span class="btn-icon">👤</span>
+                            <div>
+                                <div class="mode-title">Add Student</div>
+                                <div class="mode-description">Register new student with NFC tag</div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scan Attendance Mode -->
+            <div class="scan-mode hidden" id="scanMode">
+                <button class="btn btn--outline" id="backToModeSelect">← Back to Main Menu</button>
+                
+                <!-- Schedule Selection -->
+                <div class="card">
+                    <h3>📅 Select Schedule</h3>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <select id="scheduleSelect" class="form-control" style="flex: 1;">
+                            <option value="">Loading schedules...</option>
+                        </select>
+                        <button class="btn btn--secondary" id="refreshSchedules">🔄 Refresh</button>
+                    </div>
+                    <div id="scheduleInfo" style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                        <p>Please select a schedule to begin scanning</p>
+                    </div>
+                </div>
+
+                <!-- Scanning Controls -->
+                <div class="card">
+                    <h3>🎯 Scanning Controls</h3>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin: 15px 0;">
+                        <button class="btn btn--primary" id="startScanBtn" disabled>Start NFC Scanning</button>
+                        <button class="btn btn--primary" id="freezeAttendanceBtn" style="display: none;">Freeze Attendance</button>
+                        <button class="btn btn--primary" id="submitAttendanceBtn" style="display: none;">Submit to Database</button>
+                        <button class="btn btn--outline" id="clearScansBtn">Clear All Scans</button>
+                    </div>
+                    <div id="scanStatus" style="padding: 15px; background: #f8f9fa; border-radius: 8px; margin-top: 15px;">
+                        <p>Select a schedule to begin scanning.</p>
+                    </div>
+                </div>
+
+                <!-- Scan Statistics -->
+                <div class="scan-stats">
+                    <div class="stat-card">
+                        <span class="stat-number" id="totalScans">0</span>
+                        <span class="stat-label">Total Scans</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="uniqueScans">0</span>
+                        <span class="stat-label">Unique Students</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="successfulScans">0</span>
+                        <span class="stat-label">Successful</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="failedScans">0</span>
+                        <span class="stat-label">Failed</span>
+                    </div>
+                </div>
+
+                <!-- How It Works -->
+                <div class="card workflow-info">
+                    <h3>📋 How It Works</h3>
+                    <ol>
+                        <li><strong>Students scan freely:</strong> All scans stored locally on device</li>
+                        <li><strong>Teacher freezes attendance:</strong> Stops accepting new scans</li>
+                        <li><strong>Review & submit:</strong> Send all attendance to database at once</li>
+                    </ol>
+                    <div class="workflow-benefits">
+                        <strong>Benefits:</strong> No server overload, single API call, offline-capable
+                    </div>
+                </div>
+
+                <!-- Scan Results -->
+                <div class="card">
+                    <h3>📋 Scan Results</h3>
+                    <div id="scanList">
+                        <p class="no-scans">No scans yet. Hold an NFC tag to your device to scan.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Student Mode -->
+            <div class="add-student-mode hidden" id="addStudentMode">
+                <button class="btn btn--outline" id="backToModeSelect2">← Back to Main Menu</button>
+                
+                <div class="card">
+                    <h3>👤 Add New Student</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+                        <div>
+                            <label>Student Name</label>
+                            <input type="text" id="studentName" class="form-control" placeholder="Enter full name" required>
+                        </div>
+                        <div>
+                            <label>Student ID</label>
+                            <input type="text" id="studentId" class="form-control" placeholder="Enter student ID" required>
+                        </div>
+                        <div>
+                            <label>Section</label>
+                            <select id="studentSection" class="form-control" required>
+                                <option value="">Select Section</option>
+                                <option value="S33">S33</option>
+                                <option value="S34">S34</option>
+                                <option value="S35">S35</option>
+                                <option value="S36">S36</option>
+                                <option value="S37">S37</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>RFID Tag</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="manualRfid" class="form-control" placeholder="Scan or enter RFID" required>
+                                <button type="button" class="btn btn--secondary" id="scanRfidBtn">Scan NFC</button>
+                            </div>
+                            <div id="rfidStatus" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                                <p>Click "Scan NFC" and hold an NFC tag to your device</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn--primary" id="addStudentBtn" style="width: 100%; margin-top: 20px;">Add Student to Database</button>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Success Modal -->
+        <div class="modal hidden" id="successModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>✅ Success!</h3>
+                    <button class="btn btn--outline" id="closeSuccessModal">×</button>
+                </div>
+                <div class="modal-body">
+                    <p id="successMessage">Operation completed successfully!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Modal -->
+        <div class="modal hidden" id="loadingModal">
+            <div class="modal-content">
+                <div class="modal-body" style="text-align: center;">
+                    <div style="font-size: 2em; margin-bottom: 15px;">⏳</div>
+                    <p id="loadingMessage">Processing...</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        class NFCAttendanceScanner {
+            constructor() {
+                this.nfcSupported = false;
+                this.nfcEnabled = false;
+                this.isScanning = false;
+                this.scanResults = new Map();
+                this.currentReader = null;
+                this.selectedScheduleId = null;
+                this.schedules = [];
+                this.isFrozen = false;
+                this.bulkSubmitted = false;
+                
+                // Update API URL to your Render backend
+                this.API_BASE_URL = window.location.origin;
+                
+                this.stats = { total: 0, unique: 0, successful: 0, failed: 0 };
+                this.init();
+            }
+
+            async init() {
+                this.bindEvents();
+                await this.checkNFCSupport();
+                await this.loadSchedules();
+            }
+
+            bindEvents() {
+                document.getElementById('scanModeBtn').addEventListener('click', () => this.showScanMode());
+                document.getElementById('addStudentModeBtn').addEventListener('click', () => this.showAddStudentMode());
+                document.getElementById('retryBtn').addEventListener('click', () => this.checkNFCSupport());
+                document.getElementById('backToModeSelect').addEventListener('click', () => this.showModeSelector());
+                document.getElementById('backToModeSelect2').addEventListener('click', () => this.showModeSelector());
+                document.getElementById('scheduleSelect').addEventListener('change', (e) => this.selectSchedule(e.target.value));
+                document.getElementById('refreshSchedules').addEventListener('click', () => this.loadSchedules());
+                document.getElementById('startScanBtn').addEventListener('click', () => this.startNFCScanning());
+                document.getElementById('clearScansBtn').addEventListener('click', () => this.clearScans());
+                document.getElementById('freezeAttendanceBtn').addEventListener('click', () => this.freezeAttendance());
+                document.getElementById('submitAttendanceBtn').addEventListener('click', () => this.submitBulkAttendance());
+                document.getElementById('scanRfidBtn').addEventListener('click', () => this.scanRFIDForStudent());
+                document.getElementById('addStudentBtn').addEventListener('click', () => this.addStudent());
+                document.getElementById('closeSuccessModal').addEventListener('click', () => this.hideModal('successModal'));
+            }
+
+            async apiCall(endpoint, method = 'GET', data = null) {
+                const config = { method, headers: { 'Content-Type': 'application/json' } };
+                if (data) config.body = JSON.stringify(data);
+
+                try {
+                    const response = await fetch(`${this.API_BASE_URL}${endpoint}`, config);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return await response.json();
+                } catch (error) {
+                    console.error('API call failed:', error);
+                    throw error;
+                }
+            }
+
+            async loadSchedules() {
+                try {
+                    this.showLoading('Loading schedules...');
+                    const schedules = await this.apiCall('/faculty/schedules');
+                    this.schedules = schedules;
+                    this.populateScheduleDropdown();
+                    this.hideModal('loadingModal');
+                } catch (error) {
+                    this.hideModal('loadingModal');
+                    console.error('Failed to load schedules:', error);
+                    this.showError('Failed to load schedules. Using offline mode.');
+                    this.schedules = [{
+                        schedule_id: 1, class_name: 'S33', subject_name: 'Computer Science',
+                        day_of_week: 'Monday', start_time: '09:00', end_time: '10:00', date: new Date()
+                    }];
+                    this.populateScheduleDropdown();
+                }
+            }
+
+            populateScheduleDropdown() {
+                const scheduleSelect = document.getElementById('scheduleSelect');
+                scheduleSelect.innerHTML = '<option value="">Select a schedule</option>';
+                this.schedules.forEach(schedule => {
+                    const option = document.createElement('option');
+                    option.value = schedule.schedule_id;
+                    option.textContent = `${schedule.subject_name} - ${schedule.class_name} (${new Date(schedule.date).toLocaleDateString()})`;
+                    scheduleSelect.appendChild(option);
+                });
+            }
+
+            selectSchedule(scheduleId) {
+                this.selectedScheduleId = scheduleId;
+                const startScanBtn = document.getElementById('startScanBtn');
+                const scheduleInfo = document.getElementById('scheduleInfo');
+                
+                if (scheduleId) {
+                    const schedule = this.schedules.find(s => s.schedule_id == scheduleId);
+                    if (schedule) {
+                        scheduleInfo.innerHTML = `
+                            <div><h4>${schedule.subject_name}</h4>
+                            <p><strong>Class:</strong> ${schedule.class_name}</p>
+                            <p><strong>Date:</strong> ${new Date(schedule.date).toLocaleDateString()}</p>
+                            <p><strong>Time:</strong> ${schedule.start_time} - ${schedule.end_time}</p></div>
+                        `;
+                        startScanBtn.disabled = false;
+                        this.updateScanStatus('Ready to scan. Press "Start NFC Scanning" to begin.');
+                        this.updateBulkControls();
+                    }
+                } else {
+                    scheduleInfo.innerHTML = '<p>Please select a schedule to begin scanning</p>';
+                    startScanBtn.disabled = true;
+                    this.updateScanStatus('Select a schedule to begin scanning.');
+                }
+            }
+
+            updateBulkControls() {
+                const freezeBtn = document.getElementById('freezeAttendanceBtn');
+                const submitBtn = document.getElementById('submitAttendanceBtn');
+                
+                if (!this.selectedScheduleId) {
+                    freezeBtn.style.display = 'none';
+                    submitBtn.style.display = 'none';
+                    return;
+                }
+
+                if (!this.isFrozen) {
+                    freezeBtn.style.display = this.scanResults.size > 0 ? 'inline-block' : 'none';
+                    submitBtn.style.display = 'none';
+                    freezeBtn.textContent = `Freeze Attendance (${this.scanResults.size} scans)`;
+                } else if (!this.bulkSubmitted) {
+                    freezeBtn.style.display = 'none';
+                    submitBtn.style.display = 'inline-block';
+                    submitBtn.textContent = `Submit to Database (${this.scanResults.size} students)`;
+                } else {
+                    freezeBtn.style.display = 'none';
+                    submitBtn.style.display = 'none';
+                }
+            }
+
+            async submitBulkAttendance() {
+                if (this.scanResults.size === 0) {
+                    this.showError('No attendance data to submit');
+                    return;
+                }
+
+                this.showLoading('Submitting attendance to database...');
+
+                try {
+                    const attendanceData = Array.from(this.scanResults.values()).map(scan => ({
+                        rfid_tag: scan.rfid,
+                        timestamp: scan.timestamp.toISOString()
+                    }));
+
+                    const result = await this.apiCall('/faculty/bulk-attendance', 'POST', {
+                        schedule_id: this.selectedScheduleId,
+                        attendance_data: attendanceData
+                    });
+                    
+                    this.hideModal('loadingModal');
+
+                    if (result.success) {
+                        this.bulkSubmitted = true;
+                        this.updateBulkControls();
+                        
+                        if (result.results) {
+                            result.results.forEach(serverResult => {
+                                const localScan = this.scanResults.get(serverResult.rfid_tag);
+                                if (localScan) {
+                                    localScan.status = serverResult.success ? 'success' : 'failed';
+                                    localScan.student = serverResult.student || null;
+                                    localScan.message = serverResult.message;
+                                    localScan.isDuplicate = serverResult.isDuplicate;
+                                }
+                            });
+                        }
+
+                        this.updateScanList();
+                        this.updateScanStatus(
+                            `✅ ATTENDANCE SUBMITTED SUCCESSFULLY!\n${result.summary.successful} present, ${result.summary.duplicates} duplicates, ${result.summary.failed} failed`,
+                            true
+                        );
+
+                        this.showModal('successModal');
+                        document.getElementById('successMessage').textContent = 
+                            `Attendance submitted successfully! ${result.summary.successful} students marked present.`;
+                    } else {
+                        this.showError(result.message || 'Failed to submit attendance');
+                    }
+                } catch (error) {
+                    this.hideModal('loadingModal');
+                    this.showError(`Failed to submit attendance: ${error.message}`);
+                }
+            }
+
+            async checkNFCSupport() {
+                this.updateNFCStatus('loading', 'Checking NFC support...');
+                
+                try {
+                    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                        throw new Error('HTTPS_REQUIRED');
+                    }
+
+                    if (!('NDEFReader' in window)) {
+                        throw new Error('NOT_SUPPORTED');
+                    }
+
+                    this.nfcSupported = true;
+                    this.nfcEnabled = true;
+                    this.updateNFCStatus('success', 'NFC Ready');
+                    this.showMainContent();
+                } catch (error) {
+                    this.handleNFCError(error.message || error.name);
+                }
+            }
+
+            handleNFCError(errorType) {
+                this.nfcSupported = false;
+                this.nfcEnabled = false;
+                let message = '', instructions = '';
+
+                switch (errorType) {
+                    case 'HTTPS_REQUIRED':
+                        message = 'This application requires HTTPS to access NFC functionality.';
+                        instructions = '<ul><li>Deploy to a HTTPS server</li><li>Use localhost for development</li></ul>';
+                        break;
+                    case 'NOT_SUPPORTED':
+                        message = 'NFC is not supported on this device or browser.';
+                        instructions = '<ul><li>Android device with NFC</li><li>Chrome browser (latest version)</li><li>NFC enabled in device settings</li></ul>';
+                        break;
+                    default:
+                        message = 'NFC is not available. Please check your device settings.';
+                        instructions = '<ul><li>NFC enabled in device settings</li><li>Using supported browser (Chrome)</li></ul>';
+                }
+
+                this.updateNFCStatus('error', message);
+                document.getElementById('errorMessage').textContent = message;
+                document.getElementById('errorInstructions').innerHTML = instructions;
+                document.getElementById('errorPanel').classList.remove('hidden');
+            }
+
+            updateNFCStatus(status, message) {
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                const nfcStatus = document.getElementById('nfcStatus');
+                
+                statusDot.className = `status-dot ${status}`;
+                statusText.textContent = message;
+                nfcStatus.className = `nfc-status ${status}`;
+            }
+
+            showMainContent() { document.getElementById('mainContent').classList.remove('hidden'); }
+            showScanMode() {
+                document.getElementById('modeSelector').classList.add('hidden');
+                document.getElementById('scanMode').classList.remove('hidden');
+                document.getElementById('addStudentMode').classList.add('hidden');
+            }
+            showAddStudentMode() {
+                document.getElementById('modeSelector').classList.add('hidden');
+                document.getElementById('scanMode').classList.add('hidden');
+                document.getElementById('addStudentMode').classList.remove('hidden');
+            }
+            showModeSelector() {
+                document.getElementById('modeSelector').classList.remove('hidden');
+                document.getElementById('scanMode').classList.add('hidden');
+                document.getElementById('addStudentMode').classList.add('hidden');
+                this.stopScanning();
+            }
+
+            async startNFCScanning() {
+                if (this.isFrozen) {
+                    this.showError('Attendance is frozen. No more scans allowed.');
+                    return;
+                }
+
+                if (!this.selectedScheduleId) {
+                    this.showError('Please select a schedule first');
+                    return;
+                }
+
+                if (this.isScanning) {
+                    this.stopScanning();
+                    return;
+                }
+
+                if (!this.nfcSupported) {
+                    this.showError('NFC is not available');
+                    return;
+                }
+
+                this.isScanning = true;
+                const startScanBtn = document.getElementById('startScanBtn');
+                startScanBtn.textContent = 'Stop Scanning';
+                startScanBtn.classList.add('scanning');
+
+                try {
+                    this.currentReader = new NDEFReader();
+                    this.updateScanStatus('🔍 Ready for NFC tags... Hold student cards close to device', true);
+
+                    await this.currentReader.scan();
+
+                    this.currentReader.addEventListener('reading', (event) => {
+                        this.handleNFCReading(event);
+                    });
+
+                    this.currentReader.addEventListener('readingerror', (event) => {
+                        console.error('NFC reading error:', event);
+                        this.updateScanStatus('❌ Error reading NFC tag. Please try again.', false);
+                    });
+
+                } catch (error) {
+                    console.error('Failed to start NFC scanning:', error);
+                    this.stopScanning();
+                    let errorMessage = '❌ Failed to start NFC scanning. ';
+                    
+                    if (error.name === 'NotAllowedError') {
+                        errorMessage += 'Please grant NFC permission.';
+                    } else if (error.name === 'NotSupportedError') {
+                        errorMessage += 'NFC not supported on this device.';
+                    } else {
+                        errorMessage += 'Please check NFC is enabled.';
+                    }
+                    
+                    this.updateScanStatus(errorMessage, false);
+                }
+            }
+
+            async handleNFCReading(event) {
+                if (this.isFrozen) {
+                    this.updateScanStatus('🔒 Attendance is frozen - scan ignored', false);
+                    return;
+                }
+
+                try {
+                    let rfidTag = '';
+                    
+                    if (event.serialNumber) {
+                        rfidTag = event.serialNumber.replace(/:/g, '').toUpperCase();
+                    } else {
+                        rfidTag = this.generateRFIDFromNFCData(event);
+                    }
+                    
+                    if (!rfidTag) {
+                        throw new Error('Could not extract RFID from NFC tag');
+                    }
+                    
+                    this.processLocalScan(rfidTag);
+                } catch (error) {
+                    console.error('Error processing NFC reading:', error);
+                    this.updateScanStatus('❌ Error processing NFC tag data.', false);
+                }
+            }
+
+            generateRFIDFromNFCData(event) {
+                let dataString = event.serialNumber || Date.now().toString();
+                let hash = 0;
+                for (let i = 0; i < dataString.length; i++) {
+                    hash = ((hash << 5) - hash + dataString.charCodeAt(i)) & 0xffffffff;
+                }
+                return Math.abs(hash).toString(16).toUpperCase().padStart(8, '0').slice(0, 8);
+            }
+
+            processLocalScan(rfidTag) {
+                const timestamp = new Date();
+                const isDuplicate = this.scanResults.has(rfidTag);
+                
+                const scanData = {
+                    rfid: rfidTag,
+                    timestamp: timestamp,
+                    student: null,
+                    status: 'pending',
+                    message: isDuplicate ? 'Duplicate scan (will be ignored)' : 'Scan recorded locally',
+                    isDuplicate: isDuplicate
+                };
+                
+                this.scanResults.set(rfidTag, scanData);
+                
+                this.stats.total++;
+                if (!isDuplicate) this.stats.unique++;
+                this.stats.successful++;
+
+                let message = `✅ Scanned: ${rfidTag}`;
+                if (isDuplicate) message += '\n⚠️ Duplicate detected - will be ignored';
+                
+                this.updateScanStatus(message, true);
+                this.updateScanList();
+                this.updateScanStats();
+                this.updateBulkControls();
+            }
+
+            stopScanning() {
+                this.currentReader = null;
+                this.isScanning = false;
+                const startScanBtn = document.getElementById('startScanBtn');
+                
+                if (!this.isFrozen) {
+                    startScanBtn.textContent = 'Start NFC Scanning';
+                    startScanBtn.classList.remove('scanning');
+                    startScanBtn.disabled = !this.selectedScheduleId;
+                }
+            }
+
+            freezeAttendance() {
+                if (this.scanResults.size === 0) {
+                    this.showError('No attendance scans to freeze');
+                    return;
+                }
+
+                this.isFrozen = true;
+                this.stopScanning();
+                
+                this.updateScanStatus('🔒 Attendance FROZEN! Review the list below and click "Submit to Database" to finalize.', false);
+                this.updateBulkControls();
+                
+                const startScanBtn = document.getElementById('startScanBtn');
+                startScanBtn.disabled = true;
+                startScanBtn.textContent = 'Attendance Frozen';
+                
+                this.showModal('successModal');
+                document.getElementById('successMessage').textContent = 
+                    `Attendance frozen with ${this.scanResults.size} students. Click "Submit to Database" to save.`;
+            }
+
+            updateScanStatus(message, isSuccess = false) {
+                const scanStatus = document.getElementById('scanStatus');
+                scanStatus.innerHTML = `<p>${message}</p>`;
+            }
+
+            updateScanStats() {
+                document.getElementById('totalScans').textContent = this.stats.total;
+                document.getElementById('uniqueScans').textContent = this.stats.unique;
+                document.getElementById('successfulScans').textContent = this.stats.successful;
+                document.getElementById('failedScans').textContent = this.stats.failed;
+            }
+
+            updateScanList() {
+                const scanList = document.getElementById('scanList');
+                
+                if (this.scanResults.size === 0) {
+                    scanList.innerHTML = '<p class="no-scans">No scans yet. Hold an NFC tag to your device to scan.</p>';
+                    return;
+                }
+
+                const scansArray = Array.from(this.scanResults.values()).reverse();
+                scanList.innerHTML = scansArray.map(scan => {
+                    let statusIcon = '📱';
+                    let statusClass = 'local';
+                    
+                    if (scan.status === 'success') {
+                        statusIcon = '✅';
+                        statusClass = 'success';
+                    } else if (scan.status === 'failed') {
+                        statusIcon = '❌';
+                        statusClass = 'failed';
+                    }
+                    
+                    const studentInfo = scan.student ? `${scan.student.name} (${scan.student.section})` : 'Student pending verification';
+                    const timeString = scan.timestamp.toLocaleTimeString();
+                    const duplicateText = scan.isDuplicate ? ' - DUPLICATE' : '';
+                    
+                    return `
+                        <div class="scan-item ${statusClass}">
+                            <div class="scan-icon">${statusIcon}</div>
+                            <div class="scan-details">
+                                <div class="scan-student">${studentInfo}</div>
+                                <div class="scan-rfid">RFID: ${scan.rfid}</div>
+                                <div class="scan-time">${timeString}${duplicateText}</div>
+                                ${scan.message ? `<div class="scan-message">${scan.message}</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            clearScans() {
+                if (this.isFrozen && !confirm('Attendance is frozen. Clear all scans anyway?')) return;
+
+                if (confirm('Clear all scan results?')) {
+                    this.scanResults.clear();
+                    this.stats = { total: 0, unique: 0, successful: 0, failed: 0 };
+                    this.isFrozen = false;
+                    this.bulkSubmitted = false;
+                    
+                    this.updateScanList();
+                    this.updateScanStats();
+                    this.updateScanStatus('Scan results cleared. Ready to scan.');
+                    this.updateBulkControls();
+                    
+                    const startScanBtn = document.getElementById('startScanBtn');
+                    startScanBtn.disabled = !this.selectedScheduleId;
+                    startScanBtn.textContent = 'Start NFC Scanning';
+                }
+            }
+
+            async addStudent() {
+                const name = document.getElementById('studentName').value.trim();
+                const idNumber = document.getElementById('studentId').value.trim();
+                const section = document.getElementById('studentSection').value;
+                const rfid = document.getElementById('manualRfid').value.trim().toUpperCase();
+
+                if (!name || !idNumber || !section || !rfid) {
+                    this.showError('Please fill in all fields');
+                    return;
+                }
+
+                try {
+                    this.showLoading('Adding student...');
+                    
+                    const result = await this.apiCall('/faculty/students', 'POST', {
+                        name: name,
+                        student_id: idNumber,
+                        section: section,
+                        rfid_tag: rfid
+                    });
+                    
+                    this.hideModal('loadingModal');
+                    
+                    if (result.success) {
+                        document.getElementById('successMessage').textContent = 
+                            `Student ${name} added successfully with RFID ${rfid}`;
+                        this.showModal('successModal');
+                        this.resetAddStudentForm();
+                    } else {
+                        this.showError(result.message || 'Failed to add student');
+                    }
+                } catch (error) {
+                    this.hideModal('loadingModal');
+                    this.showError(`Failed to add student: ${error.message}`);
+                }
+            }
+
+            async scanRFIDForStudent() {
+                const scanRfidBtn = document.getElementById('scanRfidBtn');
+                const rfidStatus = document.getElementById('rfidStatus');
+                const manualRfid = document.getElementById('manualRfid');
+
+                if (!this.nfcSupported) {
+                    rfidStatus.innerHTML = '<p>❌ NFC not available. Please enter RFID manually.</p>';
+                    return;
+                }
+
+                try {
+                    scanRfidBtn.textContent = 'Scanning...';
+                    scanRfidBtn.disabled = true;
+                    rfidStatus.innerHTML = '<p>🔍 Hold NFC tag close to your device...</p>';
+
+                    const reader = new NDEFReader();
+                    await reader.scan();
+
+                    const timeout = setTimeout(() => {
+                        rfidStatus.innerHTML = '<p>❌ No tag detected. Try again or enter RFID manually.</p>';
+                        scanRfidBtn.textContent = 'Scan NFC';
+                        scanRfidBtn.disabled = false;
+                    }, 10000);
+
+                    reader.addEventListener('reading', (event) => {
+                        clearTimeout(timeout);
+                        let rfidTag = event.serialNumber ? 
+                            event.serialNumber.replace(/:/g, '').toUpperCase() : 
+                            this.generateRFIDFromNFCData(event);
+
+                        manualRfid.value = rfidTag;
+                        rfidStatus.innerHTML = `<p>✅ RFID captured: ${rfidTag}</p>`;
+                        scanRfidBtn.textContent = 'Scan NFC';
+                        scanRfidBtn.disabled = false;
+                    });
+
+                } catch (error) {
+                    console.error('RFID scan error:', error);
+                    rfidStatus.innerHTML = '<p>❌ Failed to scan. Please try again or enter RFID manually.</p>';
+                    scanRfidBtn.textContent = 'Scan NFC';
+                    scanRfidBtn.disabled = false;
+                }
+            }
+
+            resetAddStudentForm() {
+                document.getElementById('studentName').value = '';
+                document.getElementById('studentId').value = '';
+                document.getElementById('studentSection').value = '';
+                document.getElementById('manualRfid').value = '';
+                document.getElementById('rfidStatus').innerHTML = '<p>Click "Scan NFC" and hold an NFC tag to your device</p>';
+            }
+
+            showModal(modalId) { document.getElementById(modalId).classList.remove('hidden'); }
+            hideModal(modalId) { document.getElementById(modalId).classList.add('hidden'); }
+            showLoading(message) {
+                document.getElementById('loadingMessage').textContent = message;
+                this.showModal('loadingModal');
+            }
+            showError(message) { alert(message); }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            new NFCAttendanceScanner();
+        });
+    </script>
+</body>
+</html>
