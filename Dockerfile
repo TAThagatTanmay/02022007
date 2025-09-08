@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies required by dlib, OpenCV, and other libs
+# Install system dependencies needed for building native extensions like dlib and OpenCV
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -15,18 +15,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copy your application code
+# Copy your app code into the container
 COPY . /app
 
-# Upgrade pip and install dependencies
+# Upgrade pip and install python dependencies from requirements.txt
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose web server port
+# Expose the port your Flask app runs on
 EXPOSE 5000
 
-# Start your Flask app with Gunicorn
+# Command to run your application (adjust as necessary)
 CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]
