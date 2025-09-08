@@ -1,6 +1,9 @@
 # Enhanced Attendance System - Complete Integration
 # All requirements for RFID, Face Recognition, and Zoom functionality
 
+setuptools
+wheel
+
 # Flask and API requirements
 Flask==2.3.3
 flask-cors==4.0.0
