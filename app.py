@@ -23,6 +23,33 @@ app = Flask(__name__)
 CORS(app, origins=['*'])
 
 # Configuration
+import os
+import psycopg2
+from urllib.parse import urlparse
+
+# Parse DATABASE_URL if available
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL:
+    url = urlparse(DATABASE_URL)
+    DB_CONFIG = {
+        'host': url.hostname,
+        'database': url.path[1:],  # Remove leading slash
+        'user': url.username,
+        'password': url.password,
+        'port': url.port,
+        'sslmode': 'require'
+    }
+else:
+    # Fallback to individual environment variables
+    DB_CONFIG = {
+        'host': os.environ.get('DB_HOST', 'localhost'),
+        'database': os.environ.get('DB_NAME', 'attendance'),
+        'user': os.environ.get('DB_USER', 'postgres'),
+        'password': os.environ.get('DB_PASSWORD', 'password'),
+        'port': int(os.environ.get('DB_PORT', 5432)),
+        'sslmode': 'require'
+    }
+
 app.config.update(
     MAX_CONTENT_LENGTH=10 * 1024 * 1024,  # 10MB
     UPLOAD_FOLDER='temp_uploads',
