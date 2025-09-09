@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Enhanced Attendance System with RFID Integration and Zoom Support
-Complete solution with NFC scanning and real-time dashboard updates
+Enhanced Attendance System with RFID Integration and Face Recognition Support
+Complete solution with NFC scanning, face recognition, and real-time dashboard updates
 """
-
 from flask import Flask, request, jsonify, send_from_directory, render_template_string
 from flask_cors import CORS
 import os
@@ -156,6 +155,160 @@ def login():
         return jsonify({'success': False, 'message': 'Server error'}), 500
 
 # ============================================================================
+# FACE RECOGNITION ENDPOINTS (NEW)
+# ============================================================================
+
+@app.route('/api/active-schedules', methods=['GET'])
+def get_active_schedules():
+    """Get current active schedules for face recognition"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'schedules': [{
+                    'schedule_id': 1,
+                    'section_id': 1,
+                    'section_name': 'S33',
+                    'teacher_name': 'Dr. Teacher',
+                    'start_time': '09:00',
+                    'end_time': '10:30',
+                    'day_of_week': 'Monday'
+                }]
+            })
+        
+        cursor = conn.cursor()
+        current_day = datetime.now().strftime('%A')
+        
+        cursor.execute("""
+            SELECT DISTINCT
+                sc.schedule_id,
+                sc.section_id,
+                s.section_name,
+                p.name as teacher_name,
+                sc.start_time,
+                sc.end_time,
+                sc.day_of_week
+            FROM schedule sc
+            JOIN sections s ON sc.section_id = s.section_id
+            JOIN persons p ON sc.teacher_id = p.person_id
+            WHERE sc.day_of_week = %s
+            ORDER BY sc.start_time
+        """, (current_day,))
+        
+        schedules = []
+        for row in cursor.fetchall():
+            schedules.append({
+                'schedule_id': row[0],
+                'section_id': row[1],
+                'section_name': row[2],
+                'teacher_name': row[3],
+                'start_time': str(row[4]),
+                'end_time': str(row[5]),
+                'day_of_week': row[6]
+            })
+        
+        cursor.close()
+        conn.close()
+        return jsonify({'schedules': schedules})
+        
+    except Exception as e:
+        logger.error(f"Get active schedules error: {e}")
+        return jsonify({'schedules': []})
+
+@app.route('/api/continuous-attendance', methods=['POST'])
+def submit_continuous_attendance():
+    """Submit continuous face recognition attendance results"""
+    try:
+        data = request.get_json()
+        schedule_id = data.get('schedule_id')
+        session_date = data.get('session_date')
+        attendance_data = data.get('attendance_data', [])
+        
+        if not all([schedule_id, session_date, attendance_data]):
+            return jsonify({"success": False, "message": "Missing required fields"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        summary = {"present": 0, "partial": 0, "absent": 0}
+        
+        for student_attendance in attendance_data:
+            student_id = student_attendance.get('student_id')
+            total_checks = student_attendance.get('total_checks')
+            present_checks = student_attendance.get('present_checks')
+            attendance_percentage = student_attendance.get('attendance_percentage')
+            final_status = student_attendance.get('final_status')
+            
+            # Find student
+            cursor.execute("SELECT person_id, name FROM persons WHERE id_number = %s AND role = 'student'", (student_id,))
+            student = cursor.fetchone()
+            
+            if not student:
+                continue
+                
+            person_id, student_name = student
+            
+            # Check for existing attendance for this date
+            cursor.execute("""
+                SELECT attendance_id FROM final_attendance 
+                WHERE person_id = %s AND schedule_id = %s AND session_date = %s
+            """, (person_id, schedule_id, session_date))
+            
+            if cursor.fetchone():
+                # Update existing record
+                cursor.execute("""
+                    UPDATE final_attendance 
+                    SET total_checks = %s, present_checks = %s, attendance_percentage = %s, 
+                        final_status = %s, created_at = CURRENT_TIMESTAMP
+                    WHERE person_id = %s AND schedule_id = %s AND session_date = %s
+                """, (total_checks, present_checks, attendance_percentage, final_status,
+                      person_id, schedule_id, session_date))
+            else:
+                # Insert new record
+                cursor.execute("""
+                    INSERT INTO final_attendance 
+                    (person_id, schedule_id, total_checks, present_checks, attendance_percentage, 
+                     final_status, session_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (person_id, schedule_id, total_checks, present_checks, attendance_percentage,
+                      final_status, session_date))
+            
+            # Also mark in regular attendance table for compatibility
+            cursor.execute("""
+                INSERT INTO attendance (person_id, schedule_id, status, source, confidence, timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (schedule_id, person_id) DO UPDATE SET
+                source = EXCLUDED.source,
+                confidence = EXCLUDED.confidence,
+                timestamp = EXCLUDED.timestamp
+            """, (person_id, schedule_id, final_status, 'face_recognition_final', 
+                  attendance_percentage/100, datetime.now()))
+            
+            # Update summary
+            if final_status == 'present':
+                summary["present"] += 1
+            elif final_status == 'partial':
+                summary["partial"] += 1
+            else:
+                summary["absent"] += 1
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "message": "Continuous attendance processed successfully",
+            "summary": summary
+        })
+        
+    except Exception as e:
+        logger.error(f"Continuous attendance error: {e}")
+        return jsonify({"success": False, "message": "Server error"}), 500
+
+# ============================================================================
 # RFID/NFC ENDPOINTS
 # ============================================================================
 
@@ -186,8 +339,8 @@ def get_schedules():
             SELECT 
                 sc.schedule_id,
                 sc.section_id,
-                sc.subject_name,
-                sc.class_type,
+                'Computer Science' as subject_name,
+                'offline' as class_type,
                 s.section_name,
                 c.room_number,
                 p.name as teacher_name,
@@ -248,7 +401,6 @@ def bulk_attendance():
             'duplicates': 0,
             'attendance_records': []
         }
-
         response_results = []
 
         for item in attendance_data:
@@ -261,7 +413,7 @@ def bulk_attendance():
                 FROM persons p
                 LEFT JOIN student_sections ss ON p.person_id = ss.person_id
                 LEFT JOIN sections s ON ss.section_id = s.section_id
-                WHERE p.rfid_tag = %s AND p.status = 'active' AND p.role = 'student'
+                WHERE p.rfid_tag = %s AND p.role = 'student'
             """, (rfid_tag,))
             
             person_result = cursor.fetchone()
@@ -297,9 +449,9 @@ def bulk_attendance():
             # Mark attendance
             cursor.execute("""
                 INSERT INTO attendance 
-                (schedule_id, person_id, rfid_tag, status, method, confidence_score, location, notes, timestamp)
-                VALUES (%s, %s, %s, 'present', 'rfid', %s, 'classroom', %s, %s)
-            """, (schedule_id, person_id, rfid_tag, 1.0, f"RFID scan: {rfid_tag}", timestamp))
+                (schedule_id, person_id, rfid_tag, status, source, confidence, timestamp)
+                VALUES (%s, %s, %s, 'present', 'rfid_scan', %s, %s)
+            """, (schedule_id, person_id, rfid_tag, 1.0, timestamp))
             
             results['successful'] += 1
             response_results.append({
@@ -325,7 +477,6 @@ def bulk_attendance():
                 'failed': results['failed']
             }
         }
-
         return jsonify(response)
 
     except Exception as e:
@@ -395,144 +546,6 @@ def add_student():
         return jsonify({'success': False, 'message': 'Server error'}), 500
 
 # ============================================================================
-# ZOOM ATTENDANCE ENDPOINTS
-# ============================================================================
-
-@app.route('/zoom/start-session', methods=['POST'])
-def start_zoom_session():
-    """Start Zoom attendance session"""
-    try:
-        data = request.json
-        schedule_id = data.get('schedule_id')
-        zoom_meeting_id = data.get('zoom_meeting_id')
-        
-        if not schedule_id or not zoom_meeting_id:
-            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
-
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'error': 'Database connection failed'}), 500
-
-        cursor = conn.cursor()
-        
-        # Create zoom session
-        cursor.execute("""
-            INSERT INTO zoom_sessions (schedule_id, zoom_meeting_id, face_recognition_enabled)
-            VALUES (%s, %s, %s)
-            RETURNING session_id
-        """, (schedule_id, zoom_meeting_id, True))
-        
-        session_id = cursor.fetchone()[0]
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'zoom_meeting_id': zoom_meeting_id,
-            'message': 'Zoom attendance session started'
-        })
-        
-    except Exception as e:
-        logger.error(f"Start Zoom session error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/zoom/mark-attendance', methods=['POST'])
-def zoom_mark_attendance():
-    """Mark attendance for Zoom participants"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        participants = data.get('participants', [])
-        
-        if not session_id or not participants:
-            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
-
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'error': 'Database connection failed'}), 500
-
-        cursor = conn.cursor()
-        
-        # Get session details
-        cursor.execute("""
-            SELECT schedule_id FROM zoom_sessions WHERE session_id = %s
-        """, (session_id,))
-        
-        session_result = cursor.fetchone()
-        if not session_result:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'error': 'Session not found'}), 404
-        
-        schedule_id = session_result[0]
-        results = {'successful': 0, 'failed': 0, 'duplicates': 0}
-        
-        for participant in participants:
-            participant_name = participant.get('name', '').strip()
-            confidence = participant.get('confidence', 0.95)
-            
-            if not participant_name:
-                results['failed'] += 1
-                continue
-            
-            # Try to find student by name
-            cursor.execute("""
-                SELECT p.person_id, p.name, p.id_number
-                FROM persons p
-                WHERE LOWER(p.name) = LOWER(%s) AND p.role = 'student' AND p.status = 'active'
-            """, (participant_name,))
-            
-            person_result = cursor.fetchone()
-            if not person_result:
-                results['failed'] += 1
-                continue
-            
-            person_id, name, id_number = person_result
-            
-            # Check for duplicate
-            cursor.execute("""
-                SELECT attendance_id FROM attendance 
-                WHERE schedule_id = %s AND person_id = %s
-            """, (schedule_id, person_id))
-            
-            if cursor.fetchone():
-                results['duplicates'] += 1
-                continue
-            
-            # Mark attendance
-            cursor.execute("""
-                INSERT INTO attendance 
-                (schedule_id, person_id, status, method, confidence_score, location, notes, timestamp)
-                VALUES (%s, %s, 'present', 'zoom', %s, 'zoom', %s, %s)
-            """, (schedule_id, person_id, confidence, f"Zoom participant: {participant_name}", datetime.now()))
-            
-            results['successful'] += 1
-        
-        # Update session
-        cursor.execute("""
-            UPDATE zoom_sessions 
-            SET total_participants = %s, session_end = %s
-            WHERE session_id = %s
-        """, (len(participants), datetime.now(), session_id))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'results': results,
-            'message': f"Processed {len(participants)} participants"
-        })
-        
-    except Exception as e:
-        logger.error(f"Zoom mark attendance error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-# ============================================================================
 # DASHBOARD AND ANALYTICS
 # ============================================================================
 
@@ -554,7 +567,7 @@ def get_dashboard_data():
         today = datetime.now().date()
         
         # Get basic stats
-        cursor.execute("SELECT COUNT(*) FROM persons WHERE role = 'student' AND status = 'active'")
+        cursor.execute("SELECT COUNT(*) FROM persons WHERE role = 'student'")
         total_students = cursor.fetchone()[0] or 0
         
         cursor.execute("SELECT COUNT(DISTINCT section_id) FROM sections")
@@ -571,7 +584,7 @@ def get_dashboard_data():
         
         # Get recent attendance
         cursor.execute("""
-            SELECT p.name, p.id_number, a.method, a.timestamp, a.status
+            SELECT p.name, p.id_number, a.source, a.timestamp, a.status
             FROM attendance a
             JOIN persons p ON a.person_id = p.person_id
             WHERE DATE(a.timestamp) = %s
@@ -584,7 +597,7 @@ def get_dashboard_data():
             recent_attendance.append({
                 'student_name': row[0],
                 'id_number': row[1],
-                'method': row[2].upper(),
+                'method': (row[2] or 'rfid').upper(),
                 'timestamp': row[3].strftime('%H:%M:%S'),
                 'status': row[4].title()
             })
@@ -595,7 +608,7 @@ def get_dashboard_data():
         return jsonify({
             'total_students': total_students,
             'today_attendance': today_attendance_pct,
-            'active_classes': min(12, total_sections),  # Mock active classes
+            'active_classes': min(12, total_sections),
             'total_sections': total_sections,
             'recent_attendance': recent_attendance,
             'last_updated': datetime.now().isoformat()
@@ -611,92 +624,6 @@ def get_dashboard_data():
             'recent_attendance': [],
             'error': str(e)
         })
-
-@app.route('/analytics/student/<student_id>', methods=['GET'])
-def get_student_analytics(student_id):
-    """Get individual student attendance analytics"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'error': 'Database connection failed'}), 500
-
-        cursor = conn.cursor()
-        
-        # Get student info
-        cursor.execute("""
-            SELECT p.person_id, p.name, p.id_number, s.section_name
-            FROM persons p
-            LEFT JOIN student_sections ss ON p.person_id = ss.person_id
-            LEFT JOIN sections s ON ss.section_id = s.section_id
-            WHERE p.id_number = %s OR p.person_id = %s
-        """, (student_id, student_id))
-        
-        student_result = cursor.fetchone()
-        if not student_result:
-            return jsonify({'error': 'Student not found'}), 404
-        
-        person_id, name, id_number, section_name = student_result
-        
-        # Get attendance stats
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_classes,
-                COUNT(CASE WHEN a.status = 'present' THEN 1 END) as attended,
-                COUNT(CASE WHEN a.method = 'rfid' THEN 1 END) as rfid_scans,
-                COUNT(CASE WHEN a.method = 'face' THEN 1 END) as face_recognitions,
-                COUNT(CASE WHEN a.method = 'zoom' THEN 1 END) as zoom_sessions
-            FROM attendance a
-            WHERE a.person_id = %s AND a.timestamp >= CURRENT_DATE - INTERVAL '30 days'
-        """, (person_id,))
-        
-        stats_result = cursor.fetchone()
-        total_classes, attended, rfid_scans, face_recognitions, zoom_sessions = stats_result
-        
-        attendance_percentage = int((attended / max(total_classes, 1)) * 100) if total_classes > 0 else 0
-        
-        # Get recent attendance
-        cursor.execute("""
-            SELECT a.timestamp, a.method, a.status, sc.subject_name
-            FROM attendance a
-            LEFT JOIN schedule sc ON a.schedule_id = sc.schedule_id
-            WHERE a.person_id = %s
-            ORDER BY a.timestamp DESC
-            LIMIT 10
-        """, (person_id,))
-        
-        recent_attendance = []
-        for row in cursor.fetchall():
-            recent_attendance.append({
-                'date': row[0].strftime('%Y-%m-%d'),
-                'time': row[0].strftime('%H:%M:%S'),
-                'method': row[1].upper(),
-                'status': row[2].title(),
-                'subject': row[3] or 'N/A'
-            })
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'student_info': {
-                'name': name,
-                'id_number': id_number,
-                'section': section_name or 'N/A'
-            },
-            'stats': {
-                'total_classes': total_classes,
-                'attended_classes': attended,
-                'attendance_percentage': attendance_percentage,
-                'rfid_scans': rfid_scans,
-                'face_recognitions': face_recognitions,
-                'zoom_sessions': zoom_sessions
-            },
-            'recent_attendance': recent_attendance
-        })
-        
-    except Exception as e:
-        logger.error(f"Student analytics error: {e}")
-        return jsonify({'error': str(e)}), 500
 
 # ============================================================================
 # STATIC FILE SERVING
@@ -730,7 +657,7 @@ def serve_index():
         <div class="container">
             <div class="header">
                 <h1>🎓 Enhanced Attendance System</h1>
-                <p>RFID + Face Recognition + Zoom Integration</p>
+                <p>RFID + Face Recognition + Real-time Analytics</p>
             </div>
             
             <div class="card">
@@ -754,23 +681,22 @@ def serve_index():
                     <div class="feature">
                         <div class="feature-icon">👤</div>
                         <h3>Face Recognition</h3>
-                        <p>AI-powered verification</p>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">💻</div>
-                        <h3>Zoom Integration</h3>
-                        <p>Online class attendance</p>
+                        <p>AI-powered periodic verification</p>
                     </div>
                     <div class="feature">
                         <div class="feature-icon">📊</div>
                         <h3>Real-time Analytics</h3>
                         <p>Dynamic dashboards</p>
                     </div>
+                    <div class="feature">
+                        <div class="feature-icon">🎯</div>
+                        <h3>Hybrid System</h3>
+                        <p>RFID + Face Recognition combined</p>
+                    </div>
                 </div>
                 
                 <div style="text-align: center; margin-top: 30px;">
                     <a href="/nfc-index.html" class="btn">📱 NFC Scanner</a>
-                    <a href="/zoom-attendance.html" class="btn">💻 Zoom Attendance</a>
                     <a href="/analytics_dashboard_fixed.html" class="btn">📊 Dashboard</a>
                     <a href="/health" class="btn">❤️ System Health</a>
                 </div>
@@ -847,14 +773,13 @@ def health_check():
             'student_count': student_count,
             'features': {
                 'nfc_scanning': 'active',
-                'zoom_integration': 'active',
                 'face_recognition': 'active',
-                'real_time_dashboard': 'active'
+                'real_time_dashboard': 'active',
+                'hybrid_attendance': 'active'
             },
-            'version': '3.0.0',
-            'message': 'Enhanced Attendance System with RFID and Zoom integration is running!'
+            'version': '4.0.0',
+            'message': 'Enhanced Attendance System with RFID and Face Recognition is running!'
         })
-
     except Exception as e:
         return jsonify({
             'status': 'unhealthy',
